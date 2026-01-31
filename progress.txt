@@ -1,3 +1,30 @@
 # Ralph Progress Log
 Started: Sat, 31 Jan 2026 02:32:26 GMT
 ---
+
+## Codebase Patterns
+- Database file stored as auth_helper.db in project root (auto-creates on first run)
+- All database operations in src/database.py
+- Pydantic models for validation in src/models.py
+- CRUD operations in src/crud.py
+- OTP generation logic in src/otp.py
+- QR code parsing in src/qr.py
+- FastAPI endpoints in src/main.py with exception handlers
+
+---
+
+## 2026-01-31 - US-001 (Commit: d77216b)
+- Created requirements.txt with all dependencies (fastapi, uvicorn, pyotp, pyzbar, Pillow, python-multipart, pytest, httpx)
+- Created .gitignore for venv/, __pycache__/, *.pyc, *.db
+- Created src/ directory structure for application code
+- Added comprehensive README.md with setup instructions, prerequisites (libzbar0), and API examples
+- Created run.sh script for easy service startup (activates venv, installs deps, runs uvicorn)
+- Installed Python 3.12-venv and libzbar0 system packages
+- Set up Python virtual environment with all dependencies installed
+- Files changed: requirements.txt, .gitignore, README.md, run.sh, src/__init__.py, progress.txt
+- **Patterns added to Codebase Patterns:** Database file location (auth_helper.db), module structure
+- **Learnings for future iterations:**
+  - System requires libzbar0 for QR code scanning
+  - Virtual environment activation in run.sh uses source venv/bin/activate
+
+---
