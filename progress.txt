@@ -4,17 +4,60 @@ Started: Sat, 31 Jan 2026 02:32:26 GMT
 
 ## Codebase Patterns
 - Database file stored as auth_helper.db in project root (auto-creates on first run)
-- All database operations in src/database.py
+- All database operations in src/database.py with thread-safe connections
+- Database class uses threading.local() for thread-safe connection management
 - Pydantic models for validation in src/models.py (KeyCreate, KeyResponse, KeyOutput, OTPResponse)
 - CRUD operations in src/crud.py (always exclude secret from responses)
-- OTP generation logic in src/otp.py
-- QR code parsing in src/qr.py
-- FastAPI endpoints in src/main.py with exception handlers
+- get_key_with_secret() for internal use only (OTP generation, not API responses)
+- OTP generation logic in src/otp.py with support for SHA1/SHA256/SHA512
+- QR code parsing in src/qr.py extracts otpauth:// URIs using pyotp.parse_uri()
+- FastAPI endpoints in src/main.py with exception handlers (400, 404, 409)
 - KeyCreate model validates type, algorithm, digits; auto-sets counter=0 for HOTP
 - HOTP keys have period=None in DB, TOTP keys have counter=0 in DB
 - Use tempfile for test databases to avoid test contamination
+- Use qrcode library for test QR code generation
 
 ---
+
+## 2026-01-31 - US-006 to US-011 (Commit: 579791d)
+- Created src/main.py with FastAPI application and all endpoints
+- Startup event initializes database with init_db()
+- Exception handlers for ValueError: 400 Bad Request, 404 Not Found, 409 Conflict
+- Endpoints:
+  - GET /health → {status: ok}
+  - POST /keys → Create key manually (201) with JSON validation
+  - POST /keys/qr → Register key from QR code image (201) with optional name override
+  - GET /keys/{name}/otp → Get current OTP code (auto-increments HOTP counter)
+  - GET /keys → List all keys without secrets
+  - DELETE /keys/{name} → Delete a key (204 No Content)
+- Fixed Database class for thread safety (async/pytest compatibility)
+- Database uses check_same_thread=False to avoid SQLite thread errors
+- Comprehensive e2e test coverage: 15 API tests
+- All responses exclude secret for security
+- HOTP counter increments AFTER returning OTP in response
+
+## 2026-01-31 - US-005 (Commit: 7a7e7f1)
+- Created src/qr.py with parse_qr_image(image_bytes) function
+- Use pyzbar to decode QR codes from images
+- Use pyotp.parse_uri() to extract otpauth:// URIs
+- Extract key details: secret, type, algorithm, digits, period, counter, issuer, name
+- Support SHA1, SHA256, and SHA512 algorithms
+- Graceful error handling for invalid images, missing QR codes, and invalid URIs
+- Add qrcode library for generating test QR codes
+- Comprehensive test coverage: 6 QR parsing tests
+- **Learnings:** HOTP has initial_count attribute, not counter; algorithm extracted via digest comparison
+
+## 2026-01-31 - US-004 (Commit: 35f3631)
+- Created src/otp.py with generate_otp(db, name) function
+- Implement TOTP generation with configurable algorithm, digits, and period
+- Implement HOTP generation with counter increment after each code
+- Support SHA1, SHA256, and SHA512 algorithms for both TOTP and HOTP
+- Return OTP response with code, type, and metadata
+- TOTP: include time_remaining (seconds until code expires)
+- HOTP: include counter value used for generation (auto-incremented in DB)
+- Add get_key_with_secret() to CRUD for OTP generation (excludes public responses)
+- Use hashlib directly for digest algorithms with pyotp
+- Comprehensive test coverage: 8 OTP tests
 
 ## 2026-01-31 - US-003 (Commit: 7cf9ebc)
 - Created src/models.py with Pydantic models: KeyCreate, KeyResponse, KeyOutput, OTPResponse
