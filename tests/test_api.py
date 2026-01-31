@@ -666,3 +666,215 @@ def test_generate_qr_does_not_store(client):
     keys = keys_response.json()
     names = [k["name"] for k in keys]
     assert "temporary" not in names
+
+
+# US-005 Tests: Validate TOTP Token
+def test_validate_totp_token_valid(client):
+    """Test validating a valid TOTP token."""
+    # Create a TOTP key
+    client.post(
+        "/keys",
+        json={
+            "name": "github",
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "totp",
+        },
+    )
+
+    # Get the current OTP code
+    otp_response = client.get("/keys/github/otp")
+    otp_code = otp_response.json()["code"]
+
+    # Validate the token
+    response = client.post(
+        "/keys/github/validate",
+        json={"token": otp_code},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is True
+    assert data["type"] == "totp"
+    assert "time_remaining" in data
+
+
+def test_validate_totp_token_invalid(client):
+    """Test validating an invalid TOTP token."""
+    # Create a TOTP key
+    client.post(
+        "/keys",
+        json={
+            "name": "test",
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "totp",
+        },
+    )
+
+    # Try to validate an incorrect code
+    response = client.post(
+        "/keys/test/validate",
+        json={"token": "000000"},  # Unlikely to be valid
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is False
+
+
+def test_validate_totp_key_not_found(client):
+    """Test validating token for non-existent key."""
+    response = client.post(
+        "/keys/nonexistent/validate",
+        json={"token": "123456"},
+    )
+    assert response.status_code == 404
+
+
+def test_validate_totp_accepts_time_window(client):
+    """Test that TOTP validation accepts codes within time window."""
+    # Create a TOTP key
+    client.post(
+        "/keys",
+        json={
+            "name": "test",
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "totp",
+            "period": 30,
+        },
+    )
+
+    # Get current code
+    otp_response = client.get("/keys/test/otp")
+    otp_code = otp_response.json()["code"]
+
+    # Validate should accept it with time window
+    response = client.post(
+        "/keys/test/validate",
+        json={"token": otp_code},
+    )
+    assert response.status_code == 200
+    assert response.json()["valid"] is True
+
+
+# US-006 Tests: Validate HOTP Token
+def test_validate_hotp_token_valid(client):
+    """Test validating a valid HOTP token."""
+    # Create an HOTP key
+    client.post(
+        "/keys",
+        json={
+            "name": "hotp-key",
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "hotp",
+            "counter": 0,
+        },
+    )
+
+    # Generate code for counter 0 manually (without calling GET /otp)
+    import pyotp
+    hotp = pyotp.HOTP("JBSWY3DPEBLW64TMMQ======", digits=6)
+    otp_code = hotp.at(0)
+
+    # Validate the token (should check counter 0)
+    response = client.post(
+        "/keys/hotp-key/validate",
+        json={"token": otp_code},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is True
+    assert data["type"] == "hotp"
+    assert "counter" in data
+
+
+def test_validate_hotp_increments_counter(client):
+    """Test that successful HOTP validation increments counter."""
+    # Create an HOTP key
+    client.post(
+        "/keys",
+        json={
+            "name": "hotp-test",
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "hotp",
+            "counter": 0,
+        },
+    )
+
+    # Generate code for counter 0 (without calling GET /otp)
+    import pyotp
+    hotp = pyotp.HOTP("JBSWY3DPEBLW64TMMQ======", digits=6)
+    otp_code = hotp.at(0)
+
+    # Validate at counter 0
+    response = client.post(
+        "/keys/hotp-test/validate",
+        json={"token": otp_code},
+    )
+    assert response.status_code == 200
+    assert response.json()["valid"] is True
+
+    # Get list to check counter incremented to 1
+    keys_response = client.get("/keys")
+    hotp_key = [k for k in keys_response.json() if k["name"] == "hotp-test"][0]
+    assert hotp_key["counter"] == 1
+
+
+def test_validate_hotp_token_invalid(client):
+    """Test validating an invalid HOTP token."""
+    # Create an HOTP key
+    client.post(
+        "/keys",
+        json={
+            "name": "hotp",
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "hotp",
+            "counter": 50,  # Use a counter value to make "000000" unlikely to match
+        },
+    )
+
+    # Try to validate incorrect code (very unlikely to be valid for counter 50)
+    response = client.post(
+        "/keys/hotp/validate",
+        json={"token": "000000"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is False
+
+
+def test_validate_hotp_with_look_ahead(client):
+    """Test HOTP validation with counter look-ahead."""
+    # Create an HOTP key at counter 0
+    client.post(
+        "/keys",
+        json={
+            "name": "lookahead",
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "hotp",
+            "counter": 0,
+        },
+    )
+
+    # Generate codes for counters 0, 1, 2
+    import pyotp
+    hotp = pyotp.HOTP("JBSWY3DPEBLW64TMMQ======", digits=6)
+    otp0 = hotp.at(0)
+    otp1 = hotp.at(1)
+    otp2 = hotp.at(2)
+
+    # Validate otp0 at counter 0 - should pass
+    response = client.post(
+        "/keys/lookahead/validate",
+        json={"token": otp0},
+    )
+    assert response.status_code == 200
+    assert response.json()["valid"] is True
+    # Counter should now be 1
+
+    # Now validate otp2 (counter 2) - should be within look-ahead window (1-10)
+    response = client.post(
+        "/keys/lookahead/validate",
+        json={"token": otp2},
+    )
+    assert response.status_code == 200
+    # This should be valid because otp2 is within look-ahead window
+    assert response.json()["valid"] is True
+    # Counter should be updated to 3

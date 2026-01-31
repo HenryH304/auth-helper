@@ -117,3 +117,18 @@ class QRResponse(BaseModel):
 
     qr_code: str = Field(..., description="Base64-encoded QR code PNG image")
     format: str = Field(default="png", description="Image format")
+
+
+class TokenValidate(BaseModel):
+    """Model for token validation request."""
+
+    token: str = Field(..., description="OTP token to validate")
+
+
+class TokenValidateResponse(BaseModel):
+    """Model for token validation response."""
+
+    valid: bool = Field(..., description="Whether token is valid")
+    type: Literal["totp", "hotp"] = Field(..., description="Type of OTP")
+    time_remaining: Optional[int] = Field(None, description="Seconds until TOTP expires")
+    counter: Optional[int] = Field(None, description="Current counter for HOTP")

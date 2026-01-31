@@ -179,3 +179,85 @@ def generate_otpauth_uri(
         if algorithm != "sha1":
             uri = uri.replace("algorithm=SHA1", f"algorithm=SHA{algorithm.upper()}")
         return uri
+
+
+def validate_totp(
+    secret: str,
+    token: str,
+    algorithm: str,
+    digits: int,
+    period: int,
+) -> Dict[str, Any]:
+    """Validate a TOTP token against a secret.
+
+    Args:
+        secret: Base32-encoded secret.
+        token: Token to validate.
+        algorithm: HMAC algorithm.
+        digits: Number of digits.
+        period: Period in seconds.
+
+    Returns:
+        Dictionary with valid flag and time_remaining.
+    """
+    digest = _get_digest_algorithm(algorithm)
+    totp = pyotp.TOTP(secret, digits=digits, digest=digest, interval=period)
+
+    # Check current token and time window (±1 period)
+    current_time = int(time.time())
+    is_valid = totp.verify(token, valid_window=1)
+
+    # Calculate time remaining
+    time_remaining = period - (current_time % period)
+
+    return {
+        "valid": is_valid,
+        "type": "totp",
+        "time_remaining": time_remaining,
+    }
+
+
+def validate_hotp(
+    db: Database,
+    name: str,
+    secret: str,
+    token: str,
+    algorithm: str,
+    digits: int,
+    counter: int,
+) -> Dict[str, Any]:
+    """Validate an HOTP token and increment counter if valid.
+
+    Args:
+        db: Database instance.
+        name: Key name (for updating counter).
+        secret: Base32-encoded secret.
+        token: Token to validate.
+        algorithm: HMAC algorithm.
+        digits: Number of digits.
+        counter: Current counter value.
+
+    Returns:
+        Dictionary with valid flag and counter.
+    """
+    digest = _get_digest_algorithm(algorithm)
+    hotp = pyotp.HOTP(secret, digits=digits, digest=digest)
+
+    # Check current counter and look-ahead window (next 10 values)
+    is_valid = False
+    matched_counter = None
+    for i in range(counter, counter + 10):
+        if hotp.verify(token, i):
+            is_valid = True
+            matched_counter = i
+            break
+
+    if is_valid:
+        # Update counter to matched_counter + 1
+        update_counter(db, name, matched_counter + 1)
+
+    return {
+        "valid": is_valid,
+        "type": "hotp",
+        "counter": counter,
+    }

@@ -8,7 +8,7 @@ import qrcode
 import pyotp
 
 from src.database import Database, init_db
-from src.models import KeyCreate, OTPResponse, KeyGenerate, KeyGenerateResponse, QRGenerate
+from src.models import KeyCreate, OTPResponse, KeyGenerate, KeyGenerateResponse, QRGenerate, TokenValidate, TokenValidateResponse
 from src.crud import (
     create_key,
     get_key_by_name,
@@ -16,7 +16,7 @@ from src.crud import (
     delete_key,
     get_key_with_secret,
 )
-from src.otp import generate_otp, generate_secret, generate_otpauth_uri
+from src.otp import generate_otp, generate_secret, generate_otpauth_uri, validate_totp, validate_hotp
 from src.qr import parse_qr_image
 
 # Initialize FastAPI app
@@ -221,6 +221,55 @@ async def get_otp(name: str):
         if "not found" in str(e):
             raise HTTPException(status_code=404, detail=str(e))
         raise
+
+
+@app.post("/keys/{name}/validate")
+async def validate_key_token(name: str, validation: TokenValidate):
+    """Validate an OTP token against a stored key.
+
+    Args:
+        name: Key name.
+        validation: TokenValidate model with token to validate.
+
+    Returns:
+        Validation result with valid flag and metadata.
+
+    Raises:
+        404: Key not found
+        400: Invalid token format
+    """
+    try:
+        # Get the key with secret
+        key = get_key_with_secret(db, name)
+        if key is None:
+            raise ValueError(f"Key '{name}' not found")
+
+        # Validate token based on type
+        if key["type"] == "totp":
+            result = validate_totp(
+                secret=key["secret"],
+                token=validation.token,
+                algorithm=key["algorithm"],
+                digits=key["digits"],
+                period=key["period"],
+            )
+        else:  # hotp
+            result = validate_hotp(
+                db=db,
+                name=name,
+                secret=key["secret"],
+                token=validation.token,
+                algorithm=key["algorithm"],
+                digits=key["digits"],
+                counter=key["counter"],
+            )
+
+        return result
+
+    except ValueError as e:
+        if "not found" in str(e):
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.get("/keys")
