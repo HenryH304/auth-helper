@@ -13,6 +13,30 @@ Started: Sat, 31 Jan 2026 02:32:26 GMT
 
 ---
 
+## 2026-01-31 - US-002 (Commit: 0cb1b1a)
+- Created src/database.py with Database class for SQLite connection management
+- Implemented get_connection() with lazy initialization and PRAGMA foreign_keys
+- Implemented context manager support (__enter__, __exit__)
+- Created init_db() function (idempotent) to initialize schema
+- Keys table with columns: id (auto), name (unique), secret, type, algorithm, digits, period, counter, issuer, created_at
+- Added CHECK constraints for type (totp/hotp), algorithm (sha1/sha256/sha512), digits (6/8)
+- Database defaults: counter=0, created_at=CURRENT_TIMESTAMP
+- Created comprehensive unit tests (5 tests, all passing):
+  - Test database file creation
+  - Test table creation
+  - Test correct column types
+  - Test unique constraint on name
+  - Test idempotent init_db
+- Files changed: src/database.py, tests/__init__.py, tests/test_database.py
+- **Patterns added to Codebase Patterns:** Use Database class with context manager for all DB access
+- **Learnings for future iterations:**
+  - Database class uses lazy connection initialization
+  - init_db() is idempotent - safe to call multiple times
+  - Always use PRAGMA foreign_keys = ON
+  - Tests use tempfile for isolated test databases
+
+---
+
 ## 2026-01-31 - US-001 (Commit: d77216b)
 - Created requirements.txt with all dependencies (fastapi, uvicorn, pyotp, pyzbar, Pillow, python-multipart, pytest, httpx)
 - Created .gitignore for venv/, __pycache__/, *.pyc, *.db
