@@ -1,0 +1,76 @@
+# .dockerignore - Auth-Helper API
+
+# Virtual environment
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Development tools
+.git/
+.gitignore
+*.md
+Makefile
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Local development files
+.env
+.env.local
+
+# Database files (use volume instead)
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Documentation
+docs/
+*.md
+
+# Ralph-specific files
+ralph.sh
+ralph.log
+prd.json
+prd-backup-*.json
+AGENTS.md
+prompt.md
+progress.txt
+tasks/
+
+# Docker files (don't need in image)
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Backup files
+*backup*
+*.bak
