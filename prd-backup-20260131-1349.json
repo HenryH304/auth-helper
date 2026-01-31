@@ -1,0 +1,199 @@
+{
+  "project": "Auth-Helper",
+  "branchName": "feature/auth-helper-api",
+  "description": "Auth-Helper API Service - A local REST API that functions as a programmatic authenticator, generating TOTP and HOTP codes from stored keys or QR code images",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Initialize Python project with venv",
+      "description": "As a developer, I need a properly structured Python project with virtual environment so dependencies are isolated.",
+      "acceptanceCriteria": [
+        "Create requirements.txt with: fastapi, uvicorn, pyotp, pyzbar, Pillow, python-multipart",
+        "Create .gitignore with: venv/, __pycache__/, *.pyc, *.db",
+        "Create src/ directory for application code",
+        "Add README.md with setup instructions (venv creation, pip install, running)",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Create SQLite database schema",
+      "description": "As a developer, I need a database schema to persist authentication keys.",
+      "acceptanceCriteria": [
+        "Create src/database.py with SQLite connection handling",
+        "Keys table with columns: id (auto), name (unique), secret (base32), type (totp/hotp), algorithm (sha1/sha256/sha512), digits (6/8), period (int), counter (int), issuer (optional), created_at",
+        "Database file stored as auth_helper.db in project root",
+        "Database auto-creates on first run if not exists",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Create key model and CRUD operations",
+      "description": "As a developer, I need functions to create, read, update, and delete keys.",
+      "acceptanceCriteria": [
+        "Create src/models.py with Pydantic models for Key (input/output)",
+        "Create src/crud.py with: create_key, get_key_by_name, list_keys, delete_key, update_counter",
+        "Handle duplicate name error gracefully (return clear error)",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Implement OTP generation logic",
+      "description": "As a developer, I need functions to generate TOTP and HOTP codes from stored keys.",
+      "acceptanceCriteria": [
+        "Create src/otp.py with generate_otp(key) function",
+        "TOTP: use pyotp.TOTP with secret, algorithm, digits, period",
+        "HOTP: use pyotp.HOTP with secret, algorithm, digits; use stored counter",
+        "After HOTP generation, increment counter in database",
+        "Return OTP code and metadata (time remaining for TOTP, counter for HOTP)",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Implement QR code parsing",
+      "description": "As a developer, I need to extract otpauth:// URIs from QR code images.",
+      "acceptanceCriteria": [
+        "Create src/qr.py with parse_qr_image(image_bytes) function",
+        "Accept image bytes (from upload), decode using pyzbar",
+        "Return parsed otpauth:// URI or raise clear error if no QR found",
+        "Use pyotp.parse_uri to extract: secret, type, algorithm, digits, period, counter, issuer, name",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Create FastAPI application structure",
+      "description": "As a developer, I need the FastAPI app skeleton with proper error handling.",
+      "acceptanceCriteria": [
+        "Create src/main.py with FastAPI app instance",
+        "Add startup event to initialize database",
+        "Add exception handlers for common errors (not found, duplicate key, validation)",
+        "Add health check endpoint: GET /health returns {status: ok}",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Implement POST /keys endpoint",
+      "description": "As a user, I want to register a new key manually so I can generate OTPs for it later.",
+      "acceptanceCriteria": [
+        "POST /keys accepts JSON: {name, secret, type, algorithm?, digits?, period?, counter?, issuer?}",
+        "Validates secret is valid base32",
+        "Validates type is totp or hotp",
+        "For HOTP, counter defaults to 0 if not provided",
+        "For TOTP, period defaults to 30 if not provided",
+        "Returns 201 with created key details (excluding raw secret)",
+        "Returns 409 if name already exists",
+        "Returns 422 for validation errors",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Implement POST /keys/qr endpoint",
+      "description": "As a user, I want to upload a QR code image to register a key without manually entering details.",
+      "acceptanceCriteria": [
+        "POST /keys/qr accepts multipart form with image file and optional name override",
+        "Decodes QR, extracts otpauth:// URI",
+        "Parses URI and stores key (uses label from URI as name if not overridden)",
+        "Returns 201 with created key details",
+        "Returns 400 if no QR code found in image",
+        "Returns 400 if QR does not contain valid otpauth:// URI",
+        "Returns 409 if name already exists",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Implement GET /keys/{name}/otp endpoint",
+      "description": "As a user, I want to get the current OTP for a registered key.",
+      "acceptanceCriteria": [
+        "GET /keys/{name}/otp returns current OTP code",
+        "Response includes: code (string), type (totp/hotp)",
+        "For TOTP: include time_remaining (seconds until code expires)",
+        "For HOTP: include counter (the counter value used)",
+        "For HOTP: counter is incremented in database after response",
+        "Returns 404 if key name not found",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Implement GET /keys endpoint",
+      "description": "As a user, I want to list all registered keys to see what's available.",
+      "acceptanceCriteria": [
+        "GET /keys returns list of all keys",
+        "Each key includes: name, type, algorithm, digits, issuer, created_at",
+        "Does NOT include secret (security)",
+        "For HOTP: includes current counter value",
+        "For TOTP: includes period",
+        "Empty list returns [] not error",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Implement DELETE /keys/{name} endpoint",
+      "description": "As a user, I want to delete a key I no longer need.",
+      "acceptanceCriteria": [
+        "DELETE /keys/{name} removes the key from database",
+        "Returns 204 No Content on success",
+        "Returns 404 if key not found",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Create run script and documentation",
+      "description": "As a user, I need clear instructions to set up and run the service.",
+      "acceptanceCriteria": [
+        "Create run.sh that: activates venv, installs deps if needed, runs uvicorn",
+        "Update README.md with: prerequisites (libzbar0), setup steps, API examples with curl",
+        "Document all endpoints with example requests/responses",
+        "Include example for registering key manually",
+        "Include example for uploading QR code",
+        "Include example for getting OTP",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": ""
+    }
+  ]
+}
