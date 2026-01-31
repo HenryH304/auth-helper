@@ -93,3 +93,27 @@ class KeyGenerateResponse(BaseModel):
     created_at: str
     period: Optional[int] = None
     counter: Optional[int] = None
+
+
+class QRGenerate(BaseModel):
+    """Model for generating QR code from raw parameters."""
+
+    secret: str = Field(..., description="Base32-encoded secret")
+    type: Literal["totp", "hotp"] = Field(..., description="Type of OTP")
+    name: str = Field(..., description="Account name/label")
+    algorithm: Literal["sha1", "sha256", "sha512"] = Field(
+        default="sha1", description="HMAC algorithm"
+    )
+    digits: Literal[6, 8] = Field(default=6, description="Number of digits in OTP")
+    period: Optional[int] = Field(
+        default=30, description="Period in seconds for TOTP (ignored for HOTP)"
+    )
+    counter: Optional[int] = Field(default=None, description="Counter for HOTP")
+    issuer: Optional[str] = Field(default=None, description="Issuer name")
+
+
+class QRResponse(BaseModel):
+    """Model for QR code response."""
+
+    qr_code: str = Field(..., description="Base64-encoded QR code PNG image")
+    format: str = Field(default="png", description="Image format")

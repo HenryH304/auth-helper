@@ -1,9 +1,14 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 import json
+import base64
+import io
+from PIL import Image
+import qrcode
+import pyotp
 
 from src.database import Database, init_db
-from src.models import KeyCreate, OTPResponse, KeyGenerate, KeyGenerateResponse
+from src.models import KeyCreate, OTPResponse, KeyGenerate, KeyGenerateResponse, QRGenerate
 from src.crud import (
     create_key,
     get_key_by_name,
@@ -245,3 +250,165 @@ async def delete_key_endpoint(name: str):
         if "not found" in str(e):
             raise HTTPException(status_code=404, detail=str(e))
         raise
+
+
+@app.get("/keys/{name}/qr")
+async def get_key_qr(name: str, request: Request):
+    """Generate QR code for an existing key.
+
+    Args:
+        name: Key name.
+        request: FastAPI Request object for accessing headers.
+
+    Returns:
+        QR code in requested format (base64 JSON or binary image).
+
+    Raises:
+        404: Key not found
+    """
+    try:
+        # Get the key with secret (needed for otpauth URI generation)
+        key = get_key_with_secret(db, name)
+        if key is None:
+            raise ValueError(f"Key '{name}' not found")
+
+        # Generate otpauth URI
+        otpauth_uri = generate_otpauth_uri(
+            secret=key["secret"],
+            name=name,
+            type_=key["type"],
+            algorithm=key["algorithm"],
+            digits=key["digits"],
+            issuer=key.get("issuer"),
+            period=key.get("period"),
+            counter=key.get("counter"),
+        )
+
+        # Generate QR code
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(otpauth_uri)
+        qr.make(fit=True)
+
+        # Get Accept header
+        accept_header = request.headers.get("accept", "application/json")
+
+        # Determine format from Accept header
+        if "image/png" in accept_header:
+            img = qr.make_image(fill_color="black", back_color="white")
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format="PNG")
+            img_bytes.seek(0)
+            return StreamingResponse(
+                img_bytes,
+                media_type="image/png",
+            )
+        elif "image/jpeg" in accept_header:
+            img = qr.make_image(fill_color="black", back_color="white")
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format="JPEG", quality=85)
+            img_bytes.seek(0)
+            return StreamingResponse(
+                img_bytes,
+                media_type="image/jpeg",
+            )
+        else:
+            # Default to base64 JSON
+            img = qr.make_image(fill_color="black", back_color="white")
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format="PNG")
+            img_base64 = base64.b64encode(img_bytes.getvalue()).decode()
+            return {
+                "qr_code": img_base64,
+                "format": "png",
+            }
+
+    except ValueError as e:
+        if "not found" in str(e):
+            raise HTTPException(status_code=404, detail=str(e))
+        raise
+
+
+@app.post("/qr/generate")
+async def generate_qr_endpoint(qr_gen: QRGenerate, request: Request):
+    """Generate QR code from raw OTP parameters without storing.
+
+    Args:
+        qr_gen: QRGenerate model with secret and OTP parameters.
+        request: FastAPI Request object for accessing headers.
+
+    Returns:
+        QR code in requested format (base64 JSON or binary image).
+
+    Raises:
+        400: Invalid parameters or invalid secret
+    """
+    try:
+        # Validate secret is valid base32
+        try:
+            # Pyotp will validate the base32
+            test_totp = pyotp.TOTP(qr_gen.secret)
+        except Exception as e:
+            raise ValueError(f"Invalid secret: {str(e)}")
+
+        # Generate otpauth URI
+        otpauth_uri = generate_otpauth_uri(
+            secret=qr_gen.secret,
+            name=qr_gen.name,
+            type_=qr_gen.type,
+            algorithm=qr_gen.algorithm,
+            digits=qr_gen.digits,
+            issuer=qr_gen.issuer,
+            period=qr_gen.period if qr_gen.type == "totp" else None,
+            counter=qr_gen.counter if qr_gen.type == "hotp" else None,
+        )
+
+        # Generate QR code
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(otpauth_uri)
+        qr.make(fit=True)
+
+        # Get Accept header
+        accept_header = request.headers.get("accept", "application/json")
+
+        # Determine format from Accept header
+        if "image/png" in accept_header:
+            img = qr.make_image(fill_color="black", back_color="white")
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format="PNG")
+            img_bytes.seek(0)
+            return StreamingResponse(
+                img_bytes,
+                media_type="image/png",
+            )
+        elif "image/jpeg" in accept_header:
+            img = qr.make_image(fill_color="black", back_color="white")
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format="JPEG", quality=85)
+            img_bytes.seek(0)
+            return StreamingResponse(
+                img_bytes,
+                media_type="image/jpeg",
+            )
+        else:
+            # Default to base64 JSON
+            img = qr.make_image(fill_color="black", back_color="white")
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format="PNG")
+            img_base64 = base64.b64encode(img_bytes.getvalue()).decode()
+            return {
+                "qr_code": img_base64,
+                "format": "png",
+            }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

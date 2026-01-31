@@ -3,6 +3,11 @@ Started: Sat, 31 Jan 2026 02:32:26 GMT
 ---
 
 ## Codebase Patterns
+- POST /keys/generate endpoint for generating new TOTP/HOTP secrets with random base32 strings
+- KeyGenerate and KeyGenerateResponse models in src/models.py for secret generation
+- generate_secret() function uses pyotp.random_base32() for crypto-secure random generation
+- generate_otpauth_uri() function creates otpauth:// URIs with proper algorithm support
+- Secrets are auto-generated and stored; initial setup returns both secret and otpauth URI
 - Database file stored as auth_helper.db in project root (auto-creates on first run)
 - All database operations in src/database.py with thread-safe connections
 - Database class uses threading.local() for thread-safe connection management
@@ -16,6 +21,26 @@ Started: Sat, 31 Jan 2026 02:32:26 GMT
 - HOTP keys have period=None in DB, TOTP keys have counter=0 in DB
 - Use tempfile for test databases to avoid test contamination
 - Use qrcode library for test QR code generation
+
+---
+
+## 2026-01-31 - US-001, US-002 (Commit: TBD)
+- Added POST /keys/generate endpoint for generating new TOTP and HOTP secrets
+- Created KeyGenerate and KeyGenerateResponse models in src/models.py
+- Added generate_secret() function using crypto-secure pyotp.random_base32()
+- Added generate_otpauth_uri() function to create otpauth:// URIs with algorithm support
+- Endpoint automatically stores generated key in database
+- Returns 201 on success with both secret and otpauth URI for initial setup
+- Returns 409 for duplicate names, 400 for validation errors
+- Support for all parameters: issuer, algorithm (sha1/sha256/sha512), digits (6/8), period (TOTP), counter (HOTP)
+- 8 new API tests covering minimal params, all params, storage, duplicate names, HOTP counter, etc.
+- Total tests: 63 passing (new: 8 for generate endpoint)
+- Files changed: src/main.py, src/models.py, src/otp.py, tests/test_api.py
+- **Patterns added to Codebase Patterns:** Secret generation and otpauth URI creation patterns
+- **Learnings for future iterations:**
+  - generate_secret() is independent of algorithm/digits configuration (generates raw bytes)
+  - otpauth URI algorithm parameter must be explicitly set if not SHA1
+  - KeyGenerateResponse includes secret for initial setup (unlike KeyResponse which excludes it)
 
 ---
 

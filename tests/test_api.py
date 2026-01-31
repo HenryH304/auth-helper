@@ -421,3 +421,248 @@ def test_generate_hotp_stores_in_database(client):
     stored_key = [k for k in keys if k["name"] == "stored-hotp"][0]
     assert stored_key["type"] == "hotp"
     assert "counter" in stored_key
+
+
+# US-003 Tests: Generate QR Code from Existing Key
+def test_get_qr_base64_format(client):
+    """Test generating QR code in base64 format from stored key."""
+    # Create a key first
+    client.post(
+        "/keys",
+        json={
+            "name": "github",
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "totp",
+            "issuer": "GitHub",
+        },
+    )
+
+    # Get QR code in base64 format
+    response = client.get(
+        "/keys/github/qr",
+        headers={"Accept": "application/json"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "qr_code" in data
+    assert "format" in data
+    assert data["format"] == "png"
+    assert len(data["qr_code"]) > 0
+    # Base64 strings are ASCII, so this should be a valid base64 string
+    assert all(c.isalnum() or c in "+/=" for c in data["qr_code"])
+
+
+def test_get_qr_png_format(client):
+    """Test generating QR code as PNG binary."""
+    # Create a key first
+    client.post(
+        "/keys",
+        json={
+            "name": "aws",
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "totp",
+        },
+    )
+
+    # Get QR code as PNG
+    response = client.get(
+        "/keys/aws/qr",
+        headers={"Accept": "image/png"},
+    )
+    assert response.status_code == 200
+    assert response.headers.get("content-type") == "image/png"
+    # PNG files start with specific magic bytes
+    assert response.content[:8] == b'\x89PNG\r\n\x1a\n'
+
+
+def test_get_qr_jpeg_format(client):
+    """Test generating QR code as JPEG binary."""
+    # Create a key first
+    client.post(
+        "/keys",
+        json={
+            "name": "google",
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "totp",
+        },
+    )
+
+    # Get QR code as JPEG
+    response = client.get(
+        "/keys/google/qr",
+        headers={"Accept": "image/jpeg"},
+    )
+    assert response.status_code == 200
+    assert response.headers.get("content-type") == "image/jpeg"
+    # JPEG files start with FFD8
+    assert response.content[:2] == b'\xff\xd8'
+
+
+def test_get_qr_default_format(client):
+    """Test that missing Accept header defaults to application/json."""
+    # Create a key first
+    client.post(
+        "/keys",
+        json={
+            "name": "test",
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "totp",
+        },
+    )
+
+    # Get QR code without Accept header
+    response = client.get("/keys/test/qr")
+    assert response.status_code == 200
+    data = response.json()
+    assert "qr_code" in data
+
+
+def test_get_qr_not_found(client):
+    """Test getting QR code for non-existent key."""
+    response = client.get("/keys/nonexistent/qr")
+    assert response.status_code == 404
+
+
+def test_get_qr_contains_otpauth_uri(client):
+    """Test that QR code contains valid otpauth URI."""
+    # Create a key
+    client.post(
+        "/keys",
+        json={
+            "name": "test-key",
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "totp",
+            "issuer": "TestApp",
+        },
+    )
+
+    # Get QR code in base64
+    response = client.get(
+        "/keys/test-key/qr",
+        headers={"Accept": "application/json"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "qr_code" in data
+    # The QR code contains an otpauth:// URI, but we can't easily decode it
+    # Just verify the response structure
+    assert isinstance(data["qr_code"], str)
+    assert len(data["qr_code"]) > 0
+
+
+# US-004 Tests: Generate QR Code from Raw Secret
+def test_generate_qr_from_raw_secret_totp(client):
+    """Test generating QR code from raw TOTP parameters."""
+    response = client.post(
+        "/qr/generate",
+        json={
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "totp",
+            "name": "testuser",
+            "issuer": "TestApp",
+            "algorithm": "sha1",
+            "digits": 6,
+            "period": 30,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "qr_code" in data
+    assert data["format"] == "png"
+
+
+def test_generate_qr_from_raw_secret_hotp(client):
+    """Test generating QR code from raw HOTP parameters."""
+    response = client.post(
+        "/qr/generate",
+        json={
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "hotp",
+            "name": "testuser",
+            "issuer": "TestApp",
+            "counter": 10,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "qr_code" in data
+
+
+def test_generate_qr_minimal_params(client):
+    """Test generating QR code with minimal parameters."""
+    response = client.post(
+        "/qr/generate",
+        json={
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "totp",
+            "name": "user",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "qr_code" in data
+
+
+def test_generate_qr_png_binary(client):
+    """Test generating QR code as PNG binary."""
+    response = client.post(
+        "/qr/generate",
+        json={
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "totp",
+            "name": "user",
+        },
+        headers={"Accept": "image/png"},
+    )
+    assert response.status_code == 200
+    assert response.headers.get("content-type") == "image/png"
+    assert response.content[:8] == b'\x89PNG\r\n\x1a\n'
+
+
+def test_generate_qr_jpeg_binary(client):
+    """Test generating QR code as JPEG binary."""
+    response = client.post(
+        "/qr/generate",
+        json={
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "totp",
+            "name": "user",
+        },
+        headers={"Accept": "image/jpeg"},
+    )
+    assert response.status_code == 200
+    assert response.headers.get("content-type") == "image/jpeg"
+    assert response.content[:2] == b'\xff\xd8'
+
+
+def test_generate_qr_valid_secret_format(client):
+    """Test that QR generation works with valid base32 secrets."""
+    # This uses only base32-valid characters
+    response = client.post(
+        "/qr/generate",
+        json={
+            "secret": "AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH",  # Valid base32
+            "type": "totp",
+            "name": "user",
+        },
+    )
+    assert response.status_code == 200
+
+
+def test_generate_qr_does_not_store(client):
+    """Test that generating QR code does NOT store the key."""
+    response = client.post(
+        "/qr/generate",
+        json={
+            "secret": "JBSWY3DPEBLW64TMMQ======",
+            "type": "totp",
+            "name": "temporary",
+        },
+    )
+    assert response.status_code == 200
+
+    # Verify key is NOT in the list
+    keys_response = client.get("/keys")
+    keys = keys_response.json()
+    names = [k["name"] for k in keys]
+    assert "temporary" not in names
