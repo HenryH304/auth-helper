@@ -164,3 +164,42 @@ def update_counter(db: Database, name: str, new_counter: int) -> None:
 
     if cursor.rowcount == 0:
         raise ValueError(f"Key '{name}' not found")
+
+
+def get_key_with_secret(db: Database, name: str) -> Optional[Dict[str, Any]]:
+    """Get a key by name, including the secret (for OTP generation).
+
+    Args:
+        db: Database instance.
+        name: Key name to retrieve.
+
+    Returns:
+        Dictionary with all key details including secret, or None if not found.
+    """
+    connection = db.get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT id, name, secret, type, algorithm, digits, period, counter, issuer, created_at
+        FROM keys WHERE name = ?
+        """,
+        (name,),
+    )
+    row = cursor.fetchone()
+
+    if row is None:
+        return None
+
+    return {
+        "id": row[0],
+        "name": row[1],
+        "secret": row[2],
+        "type": row[3],
+        "algorithm": row[4],
+        "digits": row[5],
+        "period": row[6],
+        "counter": row[7],
+        "issuer": row[8],
+        "created_at": row[9],
+    }

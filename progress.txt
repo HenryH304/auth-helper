@@ -5,11 +5,31 @@ Started: Sat, 31 Jan 2026 02:32:26 GMT
 ## Codebase Patterns
 - Database file stored as auth_helper.db in project root (auto-creates on first run)
 - All database operations in src/database.py
-- Pydantic models for validation in src/models.py
-- CRUD operations in src/crud.py
+- Pydantic models for validation in src/models.py (KeyCreate, KeyResponse, KeyOutput, OTPResponse)
+- CRUD operations in src/crud.py (always exclude secret from responses)
 - OTP generation logic in src/otp.py
 - QR code parsing in src/qr.py
 - FastAPI endpoints in src/main.py with exception handlers
+- KeyCreate model validates type, algorithm, digits; auto-sets counter=0 for HOTP
+- HOTP keys have period=None in DB, TOTP keys have counter=0 in DB
+- Use tempfile for test databases to avoid test contamination
+
+---
+
+## 2026-01-31 - US-003 (Commit: 7cf9ebc)
+- Created src/models.py with Pydantic models: KeyCreate, KeyResponse, KeyOutput, OTPResponse
+- KeyCreate with defaults: algorithm=sha1, digits=6, period=30 for TOTP; counter=0 for HOTP
+- KeyCreate validates type (totp/hotp), algorithm (sha1/sha256/sha512), digits (6/8)
+- Created src/crud.py with CRUD operations: create_key, get_key_by_name, list_keys, delete_key, update_counter
+- All CRUD operations exclude secret from responses (security)
+- Graceful error handling for duplicate names and non-existent keys
+- Comprehensive test coverage: 26 tests total (12 CRUD, 9 models, 5 database)
+- Files changed: src/models.py, src/crud.py, tests/test_models.py, tests/test_crud.py
+- **Patterns added to Codebase Patterns:** KeyCreate defaults, HOTP/TOTP DB structure
+- **Learnings for future iterations:**
+  - CRUD operations must exclude secret from all responses
+  - Use tempfile for test databases to avoid contamination
+  - HOTP counter defaults to 0, TOTP period defaults to 30
 
 ---
 
