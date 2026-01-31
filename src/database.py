@@ -1,10 +1,11 @@
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Optional
 
 
 class Database:
-    """SQLite database connection manager."""
+    """SQLite database connection manager (thread-safe)."""
 
     def __init__(self, db_path: str = "auth_helper.db"):
         """Initialize database with given path.
@@ -13,25 +14,25 @@ class Database:
             db_path: Path to SQLite database file. Defaults to 'auth_helper.db' in project root.
         """
         self.db_path = Path(db_path)
-        self._connection: Optional[sqlite3.Connection] = None
+        self._connections = threading.local()  # Thread-local storage for connections
 
     def get_connection(self) -> sqlite3.Connection:
-        """Get or create database connection.
+        """Get or create database connection for this thread.
 
         Returns:
             SQLite connection object.
         """
-        if self._connection is None:
-            self._connection = sqlite3.connect(str(self.db_path))
+        if not hasattr(self._connections, 'connection') or self._connections.connection is None:
+            self._connections.connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
             # Enable foreign keys
-            self._connection.execute("PRAGMA foreign_keys = ON")
-        return self._connection
+            self._connections.connection.execute("PRAGMA foreign_keys = ON")
+        return self._connections.connection
 
     def close(self) -> None:
         """Close database connection."""
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        if hasattr(self._connections, 'connection') and self._connections.connection is not None:
+            self._connections.connection.close()
+            self._connections.connection = None
 
     def __enter__(self):
         """Context manager entry."""
