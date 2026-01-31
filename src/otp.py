@@ -1,5 +1,6 @@
 import hashlib
 import time
+import secrets
 from typing import Any, Dict, Literal
 
 import pyotp
@@ -124,3 +125,57 @@ def _generate_hotp(
         "type": "hotp",
         "counter": counter,
     }
+
+
+def generate_secret(length: int = 32) -> str:
+    """Generate a cryptographically secure random secret.
+
+    Args:
+        length: Length of the secret in bytes (will be base32 encoded).
+
+    Returns:
+        Base32-encoded secret string.
+    """
+    random_bytes = secrets.token_bytes(length)
+    return pyotp.random_base32(length=length)
+
+
+def generate_otpauth_uri(
+    secret: str,
+    name: str,
+    type_: str,
+    algorithm: str,
+    digits: int,
+    issuer: str = None,
+    period: int = None,
+    counter: int = None,
+) -> str:
+    """Generate an otpauth:// URI for the given parameters.
+
+    Args:
+        secret: Base32-encoded secret.
+        name: Account name/label.
+        type_: Type of OTP (totp or hotp).
+        algorithm: HMAC algorithm (sha1, sha256, sha512).
+        digits: Number of digits.
+        issuer: Optional issuer name.
+        period: Period for TOTP (in seconds).
+        counter: Counter for HOTP.
+
+    Returns:
+        otpauth:// URI string.
+    """
+    if type_ == "totp":
+        totp = pyotp.TOTP(secret, digits=digits, interval=period or 30)
+        uri = totp.provisioning_uri(name=name, issuer_name=issuer)
+        # Update the algorithm in the URI if not sha1
+        if algorithm != "sha1":
+            uri = uri.replace("algorithm=SHA1", f"algorithm=SHA{algorithm.upper()}")
+        return uri
+    else:  # hotp
+        hotp = pyotp.HOTP(secret, digits=digits)
+        uri = hotp.provisioning_uri(name=name, issuer_name=issuer, initial_count=counter or 0)
+        # Update the algorithm in the URI if not sha1
+        if algorithm != "sha1":
+            uri = uri.replace("algorithm=SHA1", f"algorithm=SHA{algorithm.upper()}")
+        return uri

@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 import json
 
 from src.database import Database, init_db
-from src.models import KeyCreate, OTPResponse
+from src.models import KeyCreate, OTPResponse, KeyGenerate, KeyGenerateResponse
 from src.crud import (
     create_key,
     get_key_by_name,
@@ -11,7 +11,7 @@ from src.crud import (
     delete_key,
     get_key_with_secret,
 )
-from src.otp import generate_otp
+from src.otp import generate_otp, generate_secret, generate_otpauth_uri
 from src.qr import parse_qr_image
 
 # Initialize FastAPI app
@@ -54,6 +54,70 @@ async def value_error_handler(request, exc):
 async def health_check():
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+@app.post("/keys/generate", status_code=201)
+async def generate_key_endpoint(key_gen: KeyGenerate):
+    """Generate a new TOTP or HOTP secret and store it.
+
+    Args:
+        key_gen: KeyGenerate model with key configuration.
+
+    Returns:
+        Generated key details (including secret for initial setup).
+
+    Raises:
+        400: Validation error
+        409: Name already exists
+    """
+    try:
+        # Generate a random secret
+        secret = generate_secret()
+
+        # Create KeyCreate with the generated secret
+        key_create = KeyCreate(
+            name=key_gen.name,
+            secret=secret,
+            type=key_gen.type,
+            algorithm=key_gen.algorithm,
+            digits=key_gen.digits,
+            period=key_gen.period if key_gen.type == "totp" else None,
+            counter=key_gen.counter if key_gen.type == "hotp" else None,
+            issuer=key_gen.issuer,
+        )
+
+        # Store the key
+        created_key = create_key(db, key_create)
+
+        # Generate otpauth URI
+        otpauth_uri = generate_otpauth_uri(
+            secret=secret,
+            name=key_gen.name,
+            type_=key_gen.type,
+            algorithm=key_gen.algorithm,
+            digits=key_gen.digits,
+            issuer=key_gen.issuer,
+            period=key_gen.period if key_gen.type == "totp" else None,
+            counter=key_gen.counter if key_gen.type == "hotp" else None,
+        )
+
+        # Return the response with secret and URI (for initial setup)
+        return KeyGenerateResponse(
+            name=created_key["name"],
+            type=created_key["type"],
+            secret=secret,
+            otpauth_uri=otpauth_uri,
+            algorithm=created_key["algorithm"],
+            digits=created_key["digits"],
+            issuer=created_key.get("issuer"),
+            created_at=created_key["created_at"],
+            period=created_key.get("period"),
+            counter=created_key.get("counter"),
+        )
+    except ValueError as e:
+        if "already exists" in str(e):
+            raise HTTPException(status_code=409, detail=str(e))
+        raise
 
 
 @app.post("/keys", status_code=201)

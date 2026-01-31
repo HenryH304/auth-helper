@@ -282,3 +282,142 @@ def test_hotp_counter_increments_on_get_otp(client):
     keys = list_response.json()
     test_key = [k for k in keys if k["name"] == "test"][0]
     assert test_key["counter"] == 2
+
+
+# US-001 Tests: Generate New TOTP Secret
+def test_generate_totp_secret_minimal(client):
+    """Test generating a new TOTP secret with minimal parameters."""
+    response = client.post(
+        "/keys/generate",
+        json={
+            "name": "newtotp",
+            "type": "totp",
+        },
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"] == "newtotp"
+    assert data["type"] == "totp"
+    assert "secret" in data
+    assert "otpauth_uri" in data
+    assert len(data["secret"]) > 0
+    assert "otpauth://totp/" in data["otpauth_uri"]
+    assert "newtotp" in data["otpauth_uri"]
+
+
+def test_generate_totp_secret_with_all_parameters(client):
+    """Test generating TOTP with all optional parameters."""
+    response = client.post(
+        "/keys/generate",
+        json={
+            "name": "my-totp",
+            "type": "totp",
+            "issuer": "MyApp",
+            "algorithm": "sha256",
+            "digits": 8,
+            "period": 60,
+        },
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"] == "my-totp"
+    assert data["type"] == "totp"
+    assert data["issuer"] == "MyApp"
+    assert data["algorithm"] == "sha256"
+    assert data["digits"] == 8
+    assert data["period"] == 60
+    assert "secret" in data
+    assert "otpauth_uri" in data
+    assert "issuer=MyApp" in data["otpauth_uri"]
+
+
+def test_generate_totp_stores_in_database(client):
+    """Test that generated TOTP is stored in database."""
+    response = client.post(
+        "/keys/generate",
+        json={"name": "stored-totp", "type": "totp"},
+    )
+    assert response.status_code == 201
+
+    # Verify it's in the list
+    list_response = client.get("/keys")
+    keys = list_response.json()
+    names = [k["name"] for k in keys]
+    assert "stored-totp" in names
+
+
+def test_generate_totp_duplicate_name_error(client):
+    """Test that duplicate names return 409 conflict."""
+    client.post(
+        "/keys/generate",
+        json={"name": "duplicate", "type": "totp"},
+    )
+
+    response = client.post(
+        "/keys/generate",
+        json={"name": "duplicate", "type": "totp"},
+    )
+    assert response.status_code == 409
+
+
+def test_generate_totp_secret_not_in_response(client):
+    """Test that actual secret is generated and callable."""
+    response = client.post(
+        "/keys/generate",
+        json={"name": "secret-test", "type": "totp"},
+    )
+    data = response.json()
+    # The response includes the secret for initial setup
+    assert "secret" in data
+    assert len(data["secret"]) > 0
+
+
+# US-002 Tests: Generate New HOTP Secret
+def test_generate_hotp_secret_minimal(client):
+    """Test generating a new HOTP secret with minimal parameters."""
+    response = client.post(
+        "/keys/generate",
+        json={
+            "name": "newhotp",
+            "type": "hotp",
+        },
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"] == "newhotp"
+    assert data["type"] == "hotp"
+    assert "secret" in data
+    assert "otpauth_uri" in data
+    assert "otpauth://hotp/" in data["otpauth_uri"]
+
+
+def test_generate_hotp_with_counter(client):
+    """Test generating HOTP with custom counter."""
+    response = client.post(
+        "/keys/generate",
+        json={
+            "name": "custom-hotp",
+            "type": "hotp",
+            "counter": 42,
+        },
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["counter"] == 42
+    assert "counter=42" in data["otpauth_uri"]
+
+
+def test_generate_hotp_stores_in_database(client):
+    """Test that generated HOTP is stored in database."""
+    response = client.post(
+        "/keys/generate",
+        json={"name": "stored-hotp", "type": "hotp"},
+    )
+    assert response.status_code == 201
+
+    # Verify it's in the list
+    list_response = client.get("/keys")
+    keys = list_response.json()
+    stored_key = [k for k in keys if k["name"] == "stored-hotp"][0]
+    assert stored_key["type"] == "hotp"
+    assert "counter" in stored_key

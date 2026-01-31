@@ -62,3 +62,34 @@ class OTPResponse(BaseModel):
     type: Literal["totp", "hotp"]
     time_remaining: Optional[int] = None
     counter: Optional[int] = None
+
+
+class KeyGenerate(BaseModel):
+    """Model for generating a new key."""
+
+    name: str = Field(..., description="Unique name for the key")
+    type: Literal["totp", "hotp"] = Field(..., description="Type of OTP")
+    algorithm: Literal["sha1", "sha256", "sha512"] = Field(
+        default="sha1", description="HMAC algorithm"
+    )
+    digits: Literal[6, 8] = Field(default=6, description="Number of digits in OTP")
+    period: Optional[int] = Field(
+        default=30, description="Period in seconds for TOTP (ignored for HOTP)"
+    )
+    counter: Optional[int] = Field(default=None, description="Counter for HOTP")
+    issuer: Optional[str] = Field(default=None, description="Issuer name")
+
+
+class KeyGenerateResponse(BaseModel):
+    """Model for key generation response (includes secret for initial setup)."""
+
+    name: str
+    type: Literal["totp", "hotp"]
+    secret: str
+    otpauth_uri: str
+    algorithm: Literal["sha1", "sha256", "sha512"]
+    digits: Literal[6, 8]
+    issuer: Optional[str] = None
+    created_at: str
+    period: Optional[int] = None
+    counter: Optional[int] = None
