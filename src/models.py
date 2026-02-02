@@ -62,3 +62,45 @@ class OTPResponse(BaseModel):
     type: Literal["totp", "hotp"]
     time_remaining: Optional[int] = None
     counter: Optional[int] = None
+
+
+class KeyGenerateRequest(BaseModel):
+    """Model for generating a new key (Party A)."""
+
+    name: str = Field(..., description="Unique name for the key")
+    type: Literal["totp", "hotp"] = Field(..., description="Type of OTP")
+    algorithm: Literal["sha1", "sha256", "sha512"] = Field(
+        default="sha1", description="HMAC algorithm"
+    )
+    digits: Literal[6, 8] = Field(default=6, description="Number of digits in OTP")
+    period: Optional[int] = Field(
+        default=30, description="Period in seconds for TOTP (ignored for HOTP)"
+    )
+    issuer: Optional[str] = Field(default=None, description="Issuer name")
+
+
+class KeyGenerateResponse(BaseModel):
+    """Model for key generation response (includes secret for Party A)."""
+
+    name: str
+    type: Literal["totp", "hotp"]
+    algorithm: Literal["sha1", "sha256", "sha512"]
+    digits: Literal[6, 8]
+    period: Optional[int] = None
+    counter: Optional[int] = None
+    issuer: Optional[str] = None
+    secret: str  # Included for Party A to share with Party B
+    uri: str  # otpauth:// URI for QR code generation
+
+
+class OTPVerifyRequest(BaseModel):
+    """Model for verifying an OTP (Party A)."""
+
+    name: str = Field(..., description="Key name to verify against")
+    code: str = Field(..., description="OTP code to verify")
+
+
+class OTPVerifyResponse(BaseModel):
+    """Model for OTP verification response."""
+
+    valid: bool

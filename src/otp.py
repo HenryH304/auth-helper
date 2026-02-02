@@ -124,3 +124,96 @@ def _generate_hotp(
         "type": "hotp",
         "counter": counter,
     }
+
+
+def verify_otp(db: Database, name: str, code: str) -> Dict[str, Any]:
+    """Verify an OTP code against a stored key (Party A verification).
+
+    Args:
+        db: Database instance.
+        name: Key name.
+        code: OTP code to verify.
+
+    Returns:
+        Dictionary with valid (bool).
+
+    Raises:
+        ValueError: If key not found.
+    """
+    key = get_key_with_secret(db, name)
+    if key is None:
+        raise ValueError(f"Key '{name}' not found")
+
+    secret = key["secret"]
+    key_type = key["type"]
+    algorithm = key["algorithm"]
+    digits = key["digits"]
+
+    digest = _get_digest_algorithm(algorithm)
+
+    if key_type == "totp":
+        return _verify_totp(secret, digits, key["period"], digest, code)
+    else:  # hotp
+        return _verify_hotp(db, name, secret, digits, key["counter"], digest, code)
+
+
+def _verify_totp(
+    secret: str,
+    digits: int,
+    period: int,
+    digest,
+    code: str,
+) -> Dict[str, Any]:
+    """Verify a TOTP code.
+
+    Args:
+        secret: Base32-encoded secret.
+        digits: Number of digits.
+        period: Time period in seconds.
+        digest: Digest algorithm function.
+        code: OTP code to verify.
+
+    Returns:
+        Dictionary with valid (bool).
+    """
+    totp = pyotp.TOTP(secret, digits=digits, digest=digest, interval=period)
+    # valid_window=1 allows for 1 period drift (previous or next code)
+    valid = totp.verify(code, valid_window=1)
+
+    return {"valid": valid}
+
+
+def _verify_hotp(
+    db: Database,
+    name: str,
+    secret: str,
+    digits: int,
+    counter: int,
+    digest,
+    code: str,
+) -> Dict[str, Any]:
+    """Verify an HOTP code with look-ahead window.
+
+    Args:
+        db: Database instance.
+        name: Key name (for updating counter).
+        secret: Base32-encoded secret.
+        digits: Number of digits.
+        counter: Current counter value.
+        digest: Digest algorithm function.
+        code: OTP code to verify.
+
+    Returns:
+        Dictionary with valid (bool).
+    """
+    hotp = pyotp.HOTP(secret, digits=digits, digest=digest)
+
+    # Look-ahead window of 10 to handle desync
+    look_ahead = 10
+    for i in range(look_ahead):
+        if hotp.verify(code, counter + i):
+            # Update counter to next value after the matched one
+            update_counter(db, name, counter + i + 1)
+            return {"valid": True}
+
+    return {"valid": False}

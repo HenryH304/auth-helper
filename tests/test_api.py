@@ -134,7 +134,7 @@ def test_get_otp_totp(client):
         },
     )
 
-    response = client.get("/keys/test/otp")
+    response = client.get("/keys/otp", params={"name": "test"})
     assert response.status_code == 200
     data = response.json()
     assert data["type"] == "totp"
@@ -154,7 +154,7 @@ def test_get_otp_hotp(client):
         },
     )
 
-    response = client.get("/keys/test/otp")
+    response = client.get("/keys/otp", params={"name": "test"})
     assert response.status_code == 200
     data = response.json()
     assert data["type"] == "hotp"
@@ -164,7 +164,7 @@ def test_get_otp_hotp(client):
 
 def test_get_otp_not_found(client):
     """Test getting OTP for non-existent key."""
-    response = client.get("/keys/nonexistent/otp")
+    response = client.get("/keys/otp", params={"name": "nonexistent"})
     assert response.status_code == 404
 
 
@@ -179,17 +179,17 @@ def test_delete_key(client):
         },
     )
 
-    response = client.delete("/keys/github")
+    response = client.delete("/keys", params={"name": "github"})
     assert response.status_code == 204
 
     # Verify key is deleted
-    response = client.get("/keys/github/otp")
+    response = client.get("/keys/otp", params={"name": "github"})
     assert response.status_code == 404
 
 
 def test_delete_key_not_found(client):
     """Test deleting non-existent key."""
-    response = client.delete("/keys/nonexistent")
+    response = client.delete("/keys", params={"name": "nonexistent"})
     assert response.status_code == 404
 
 
@@ -270,11 +270,11 @@ def test_hotp_counter_increments_on_get_otp(client):
     )
 
     # First OTP
-    response1 = client.get("/keys/test/otp")
+    response1 = client.get("/keys/otp", params={"name": "test"})
     assert response1.json()["counter"] == 0
 
     # Second OTP
-    response2 = client.get("/keys/test/otp")
+    response2 = client.get("/keys/otp", params={"name": "test"})
     assert response2.json()["counter"] == 1
 
     # Verify counter in list
@@ -282,3 +282,213 @@ def test_hotp_counter_increments_on_get_otp(client):
     keys = list_response.json()
     test_key = [k for k in keys if k["name"] == "test"][0]
     assert test_key["counter"] == 2
+
+
+# =============================================================================
+# Party A Endpoints: Generate and Verify
+# =============================================================================
+
+
+def test_generate_key_totp(client):
+    """Test generating a new TOTP key."""
+    response = client.post(
+        "/keys/generate",
+        json={
+            "name": "bob",
+            "type": "totp",
+        },
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"] == "bob"
+    assert data["type"] == "totp"
+    assert "secret" in data  # Secret SHOULD be in response for Party A
+    assert "uri" in data  # otpauth:// URI for QR code generation
+    assert data["uri"].startswith("otpauth://totp/")
+    assert len(data["secret"]) >= 16  # Base32 secret should be at least 16 chars
+
+
+def test_generate_key_hotp(client):
+    """Test generating a new HOTP key."""
+    response = client.post(
+        "/keys/generate",
+        json={
+            "name": "alice",
+            "type": "hotp",
+        },
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"] == "alice"
+    assert data["type"] == "hotp"
+    assert "secret" in data
+    assert "uri" in data
+    assert data["uri"].startswith("otpauth://hotp/")
+
+
+def test_generate_key_with_issuer(client):
+    """Test generating a key with custom issuer."""
+    response = client.post(
+        "/keys/generate",
+        json={
+            "name": "charlie",
+            "type": "totp",
+            "issuer": "MyApp",
+        },
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["issuer"] == "MyApp"
+    assert "MyApp" in data["uri"]
+
+
+def test_generate_key_duplicate(client):
+    """Test generating a key with duplicate name fails."""
+    client.post(
+        "/keys/generate",
+        json={"name": "bob", "type": "totp"},
+    )
+
+    response = client.post(
+        "/keys/generate",
+        json={"name": "bob", "type": "totp"},
+    )
+    assert response.status_code == 409
+
+
+def test_verify_otp_valid_totp(client):
+    """Test verifying a valid TOTP code."""
+    import pyotp
+
+    # Generate a key
+    gen_response = client.post(
+        "/keys/generate",
+        json={"name": "bob", "type": "totp"},
+    )
+    secret = gen_response.json()["secret"]
+
+    # Generate a valid OTP using the same secret
+    totp = pyotp.TOTP(secret)
+    valid_code = totp.now()
+
+    # Verify
+    response = client.post(
+        "/keys/verify",
+        json={"name": "bob", "code": valid_code},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is True
+
+
+def test_verify_otp_invalid_code(client):
+    """Test verifying an invalid OTP code."""
+    client.post(
+        "/keys/generate",
+        json={"name": "bob", "type": "totp"},
+    )
+
+    response = client.post(
+        "/keys/verify",
+        json={"name": "bob", "code": "000000"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is False
+
+
+def test_verify_otp_not_found(client):
+    """Test verifying OTP for non-existent key."""
+    response = client.post(
+        "/keys/verify",
+        json={"name": "nonexistent", "code": "123456"},
+    )
+    assert response.status_code == 404
+
+
+def test_verify_otp_valid_hotp(client):
+    """Test verifying a valid HOTP code."""
+    import pyotp
+
+    # Generate a key
+    gen_response = client.post(
+        "/keys/generate",
+        json={"name": "alice", "type": "hotp"},
+    )
+    secret = gen_response.json()["secret"]
+
+    # Generate a valid OTP using the same secret at counter 0
+    hotp = pyotp.HOTP(secret)
+    valid_code = hotp.at(0)
+
+    # Verify
+    response = client.post(
+        "/keys/verify",
+        json={"name": "alice", "code": valid_code},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is True
+
+
+def test_verify_hotp_increments_counter(client):
+    """Test that verifying HOTP increments the counter."""
+    import pyotp
+
+    # Generate a key
+    gen_response = client.post(
+        "/keys/generate",
+        json={"name": "alice", "type": "hotp"},
+    )
+    secret = gen_response.json()["secret"]
+
+    hotp = pyotp.HOTP(secret)
+
+    # Verify code at counter 0
+    response = client.post(
+        "/keys/verify",
+        json={"name": "alice", "code": hotp.at(0)},
+    )
+    assert response.json()["valid"] is True
+
+    # Counter 0 should no longer work
+    response = client.post(
+        "/keys/verify",
+        json={"name": "alice", "code": hotp.at(0)},
+    )
+    assert response.json()["valid"] is False
+
+    # Counter 1 should now work
+    response = client.post(
+        "/keys/verify",
+        json={"name": "alice", "code": hotp.at(1)},
+    )
+    assert response.json()["valid"] is True
+
+
+def test_verify_hotp_look_ahead_window(client):
+    """Test that HOTP verification allows a look-ahead window."""
+    import pyotp
+
+    # Generate a key
+    gen_response = client.post(
+        "/keys/generate",
+        json={"name": "alice", "type": "hotp"},
+    )
+    secret = gen_response.json()["secret"]
+
+    hotp = pyotp.HOTP(secret)
+
+    # Verify code at counter 2 (skipping 0 and 1) - should work within window
+    response = client.post(
+        "/keys/verify",
+        json={"name": "alice", "code": hotp.at(2)},
+    )
+    assert response.json()["valid"] is True
+
+    # Counter should now be at 3
+    response = client.post(
+        "/keys/verify",
+        json={"name": "alice", "code": hotp.at(3)},
+    )
+    assert response.json()["valid"] is True

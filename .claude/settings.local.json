@@ -7,7 +7,15 @@
       "Bash(make run:*)",
       "Bash(curl:*)",
       "Bash(make stop:*)",
-      "Bash(PORT=9000 make run:*)"
+      "Bash(PORT=9000 make run:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python:*)",
+      "Bash(source:*)",
+      "Bash(pip install:*)",
+      "Bash(brew install:*)",
+      "Bash(pip uninstall:*)",
+      "Bash(DYLD_LIBRARY_PATH=/opt/homebrew/lib python -m pytest:*)",
+      "Bash(make test-local:*)"
     ]
   }
 }

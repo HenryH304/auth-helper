@@ -4,7 +4,14 @@ import json
 import os
 
 from src.database import Database, init_db
-from src.models import KeyCreate, OTPResponse
+from src.models import (
+    KeyCreate,
+    OTPResponse,
+    KeyGenerateRequest,
+    KeyGenerateResponse,
+    OTPVerifyRequest,
+    OTPVerifyResponse,
+)
 from src.crud import (
     create_key,
     get_key_by_name,
@@ -12,7 +19,8 @@ from src.crud import (
     delete_key,
     get_key_with_secret,
 )
-from src.otp import generate_otp
+from src.otp import generate_otp, verify_otp
+import pyotp
 from src.qr import parse_qr_image
 
 # Initialize FastAPI app
@@ -134,12 +142,12 @@ async def create_key_from_qr(
         raise HTTPException(status_code=400, detail=error_msg)
 
 
-@app.get("/keys/{name}/otp")
+@app.get("/keys/otp")
 async def get_otp(name: str):
     """Get the current OTP code for a key.
 
     Args:
-        name: Key name.
+        name: Key name (query parameter).
 
     Returns:
         OTP code and metadata.
@@ -166,12 +174,12 @@ async def list_all_keys():
     return list_keys(db)
 
 
-@app.delete("/keys/{name}", status_code=204)
+@app.delete("/keys", status_code=204)
 async def delete_key_endpoint(name: str):
     """Delete a registered key.
 
     Args:
-        name: Key name.
+        name: Key name (query parameter).
 
     Raises:
         404: Key not found
@@ -179,6 +187,94 @@ async def delete_key_endpoint(name: str):
     try:
         delete_key(db, name)
         return None
+    except ValueError as e:
+        if "not found" in str(e):
+            raise HTTPException(status_code=404, detail=str(e))
+        raise
+
+
+# =============================================================================
+# Party A Endpoints: Generate and Verify
+# =============================================================================
+
+
+@app.post("/keys/generate", status_code=201, response_model=KeyGenerateResponse)
+async def generate_key_endpoint(request: KeyGenerateRequest):
+    """Generate a new key with a random secret (Party A).
+
+    Creates a new key with a randomly generated secret and returns
+    both the secret and an otpauth:// URI for sharing with Party B.
+
+    Args:
+        request: KeyGenerateRequest with key configuration.
+
+    Returns:
+        Key details including secret and URI.
+
+    Raises:
+        409: Name already exists
+    """
+    # Generate a random secret
+    secret = pyotp.random_base32()
+
+    # Build the otpauth:// URI
+    if request.type == "totp":
+        otp = pyotp.TOTP(secret, digits=request.digits, interval=request.period)
+        uri = otp.provisioning_uri(name=request.name, issuer_name=request.issuer)
+        counter = None
+    else:  # hotp
+        otp = pyotp.HOTP(secret, digits=request.digits)
+        uri = otp.provisioning_uri(name=request.name, issuer_name=request.issuer, initial_count=0)
+        counter = 0
+
+    # Create the key in the database
+    key_data = KeyCreate(
+        name=request.name,
+        secret=secret,
+        type=request.type,
+        algorithm=request.algorithm,
+        digits=request.digits,
+        period=request.period if request.type == "totp" else None,
+        counter=counter,
+        issuer=request.issuer,
+    )
+
+    try:
+        create_key(db, key_data)
+    except ValueError as e:
+        if "already exists" in str(e):
+            raise HTTPException(status_code=409, detail=str(e))
+        raise
+
+    return KeyGenerateResponse(
+        name=request.name,
+        type=request.type,
+        algorithm=request.algorithm,
+        digits=request.digits,
+        period=request.period if request.type == "totp" else None,
+        counter=counter,
+        issuer=request.issuer,
+        secret=secret,
+        uri=uri,
+    )
+
+
+@app.post("/keys/verify", response_model=OTPVerifyResponse)
+async def verify_otp_endpoint(request: OTPVerifyRequest):
+    """Verify an OTP code against a stored key (Party A).
+
+    Args:
+        request: OTPVerifyRequest with key name and code.
+
+    Returns:
+        Verification result (valid: true/false).
+
+    Raises:
+        404: Key not found
+    """
+    try:
+        result = verify_otp(db, request.name, request.code)
+        return result
     except ValueError as e:
         if "not found" in str(e):
             raise HTTPException(status_code=404, detail=str(e))
