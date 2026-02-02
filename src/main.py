@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 import json
+import os
 
 from src.database import Database, init_db
 from src.models import KeyCreate, OTPResponse
@@ -21,8 +22,9 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Initialize database
-db = Database()
+# Initialize database (use DATA_DIR env var for Docker volume persistence)
+db_path = os.path.join(os.environ.get("DATA_DIR", "."), "auth_helper.db")
+db = Database(db_path)
 
 
 @app.on_event("startup")

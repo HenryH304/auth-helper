@@ -1,0 +1,17 @@
+.git
+.gitignore
+.claude
+venv
+__pycache__
+*.pyc
+*.pyo
+*.db
+*.log
+.pytest_cache
+tests
+README.md
+progress.txt
+ralph.log
+Makefile
+Dockerfile
+.dockerignore

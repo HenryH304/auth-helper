@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git reset:*)",
+      "Bash(git checkout:*)",
+      "Bash(make build:*)",
+      "Bash(make run:*)",
+      "Bash(curl:*)",
+      "Bash(make stop:*)",
+      "Bash(PORT=9000 make run:*)"
+    ]
+  }
+}
